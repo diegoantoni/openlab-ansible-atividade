@@ -18,4 +18,4 @@
  # TESTANDO O PROJETO
  - Abra um navegador e digite o seguinte link:
  - http://wordpress.atividade.example
- - Deve aparecer a pagina do wordpress solicitando usuario e senha
+ - Deve aparecer a pagina do wordpress solicitando o titulo do site, usuario e senha
