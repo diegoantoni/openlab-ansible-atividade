@@ -1,0 +1,134 @@
+- hosts: all
+  become: yes
+  become_user: root
+  become_method: sudo
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    mysql_root_password: "123456"
+    
+  tasks:
+    - name: Garantindo /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ item }}"
+      with_items:
+        - 192.168.56.50 wordpress wordpress.atividade.example
+        - 192.168.56.50 mariadb mariadb.atividade.example
+
+    - name: Instalando dependencias e pacotes
+      yum:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        - wget
+        - vim
+        - net-tools
+        - unzip
+        - httpd 
+        - httpd-tools 
+        - mariadb-server 
+        - mariadb
+        - php 
+        - php-json 
+        - php-mysqlnd 
+        - php-json 
+        - php-curl 
+        - python3-PyMySQL
+        - php-common 
+        - php-opcache 
+        - php-cli 
+        - php-gd
+
+    - name: habilitando e startando http
+      service:
+        name: httpd
+        enabled: true 
+        state: started
+
+    - name: habilitando e startando maridb
+      service:
+        name: mariadb
+        enabled: true 
+        state: started
+
+    - name: 'Criar banco de dados wordpress_db no mysql'
+      command: mysql -u root --execute="CREATE DATABASE IF NOT EXISTS wordpress_db;"
+
+    - name: 'Criar usuário wp_user no mysql'  
+      command: mysql -u root --execute="CREATE USER IF NOT EXISTS 'wp_user'@'%' IDENTIFIED BY '123456';"
+    - name: 'Atribuir permissões totais ao wp_user para o banco wordpress_db no mysql'  
+      command: mysql -u root --execute="GRANT ALL PRIVILEGES ON wordpress_db.* TO 'wp_user'@'%'; FLUSH PRIVILEGES;"
+   
+    - name: 'Fazer Download da última versão do Wordpress'
+      get_url:
+        url: 'https://br.wordpress.org/latest-pt_BR.tar.gz'
+        dest: '/tmp/latest-pt_BR.tar.gz'
+
+    - name: 'Descompactar o arquivo do Wordpress'
+      unarchive:
+        src: '/tmp/latest-pt_BR.tar.gz'
+        dest: '/var/www/html/' 
+        owner: apache
+        group: apache
+        mode: 0755
+        remote_src: yes
+
+    - name: 'Copiar arquivo de configuração de exemplo'
+      copy:
+        src: '/var/www/html/wordpress/wp-config-sample.php'  
+        dest: '/var/www/html/wordpress/wp-config.php' 
+        owner: apache
+        group: apache
+        mode: 0755
+        remote_src: yes
+
+    - name: 'Configurar wp-config com as entradas do banco de dados'
+      replace:
+        path: '/var/www/html/wordpress/wp-config.php'
+        regexp: '{{ item.regex }}'
+        replace: '{{ item.value }}' 
+      with_items:
+        - { regex: 'database_name_here', value: 'wordpress_db'}
+        - { regex: 'username_here', value: 'wp_user'}
+        - { regex: 'password_here', value: '123456'}
+
+    - name: Backup do httpd.conf 
+      copy:
+        src: '/etc/httpd/conf/httpd.conf'
+        dest: '/etc/httpd/conf/httpd.conf.bkp'
+        remote_src: yes
+      become: yes
+
+    - name: Configurando o httpd.conf
+      lineinfile:
+        dest: /etc/httpd/conf/httpd.conf
+        #search_string: 'IncludeOptional'
+        insertbefore: "# End of file"  
+        line: IncludeOptional sites-enabled/*.conf
+        
+      become: yes
+
+    - name: Adicionando pastas dos virtualhost
+      shell:
+        cmd: mkdir -p sites-available sites-enabled
+        chdir: /etc/httpd/
+      become: yes
+
+    - name: Adicionando virtualhost wordpress
+      copy:
+        src: '../files/wordpress.conf'
+        dest: '/etc/httpd/sites-available/'
+      become: yes
+
+    - name: Publicando o virtualhost worpress
+      shell:
+        cmd: ln -s /etc/httpd/sites-available/wordpress.conf
+        chdir: /etc/httpd/sites-enabled/
+      become: yes
+
+    - name: restart httpd
+      service:
+        name: httpd
+        state: restarted
